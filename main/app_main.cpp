@@ -6,10 +6,13 @@
 
 #include "esp_log.h"
 
+#include "pinout_defines.h"
 #include "recorder.h"
 #include "player.h"
 #include "i2s_player.h"
 #include "bluetooth_serial.h"
+
+#include "driver/gpio.h"
 
 #define AUDIO_SAMPLE_RATE 22050
 #define AUDIO_MESSAGE_LENGTH_SEC 15
@@ -38,11 +41,23 @@ void app_main(void)
     else ESP_LOGE(TAG, "audio buffer allocation failed");
 
     bluetooth_serial_init();
+    led_init_pins();
+
     recorder_serial_output_callback_register(&bluetooth_serial_write);
+    recorder_led_control_rec_led_callback_register(&led_rec_ctrl);
+    recorder_led_control_sig_low_led_callback_register(&led_sig_low_ctrl);
+    recorder_led_control_sig_mid_led_callback_register(&led_sig_mid_ctrl);
+    recorder_led_control_sig_high_led_callback_register(&led_sig_high_ctrl);
+
+    i2s_player_serial_output_callback_register(&bluetooth_serial_write);
+    i2s_player_led_control_play_led_callback_register(&led_ptt_ctrl);
+
     i2s_play_tone(1000, 180);
     i2s_play_tone(1200, 180);
     i2s_play_tone(1400, 180);
     i2s_play_tone(1000, 220);
+
+    
     while(1){
         size_t recorded_audio_size = 0;
         esp_err_t ret = record_raw(audio_buffer_ptr, audio_buffer_size, &recorded_audio_size);
@@ -54,11 +69,66 @@ void app_main(void)
             ESP_LOGI(TAG, "RECORD is too long, NOT_FINISHED. DROPPED");
             continue;
         }
-        i2s_play_tone(1200, 500);
+        
         i2s_play_raw(audio_buffer_ptr, recorded_audio_size);
-        i2s_play_tone(1400, 500);
+        
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
+esp_err_t led_init_pins(){
+    gpio_reset_pin(LED_REC_GPIO);
+    gpio_set_level(LED_REC_GPIO, 0);
+    gpio_set_direction(LED_REC_GPIO, GPIO_MODE_OUTPUT);
 
+    gpio_reset_pin(LED_PTT_GPIO);
+    gpio_set_level(LED_PTT_GPIO, 0);
+    gpio_set_direction(LED_PTT_GPIO, GPIO_MODE_OUTPUT);
+    
+    gpio_reset_pin(LED_LOW_SIGNAL_GPIO);
+    gpio_set_level(LED_LOW_SIGNAL_GPIO, 0);
+    gpio_set_direction(LED_LOW_SIGNAL_GPIO, GPIO_MODE_OUTPUT);
+
+    gpio_reset_pin(LED_MEDIUM_SIGNAL_GPIO);
+    gpio_set_level(LED_MEDIUM_SIGNAL_GPIO, 0);
+    gpio_set_direction(LED_MEDIUM_SIGNAL_GPIO, GPIO_MODE_OUTPUT);
+
+    gpio_reset_pin(LED_HIGH_SIGNAL_GPIO);
+    gpio_set_level(LED_HIGH_SIGNAL_GPIO, 0);
+    gpio_set_direction(LED_HIGH_SIGNAL_GPIO, GPIO_MODE_OUTPUT);
+
+    led_rec_ctrl(true);
+    led_ptt_ctrl(true);
+    led_sig_low_ctrl(true);
+    led_sig_mid_ctrl(true);
+    led_sig_high_ctrl(true);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    led_rec_ctrl(false);
+    led_ptt_ctrl(false);
+    led_sig_low_ctrl(false);
+    led_sig_mid_ctrl(false);
+    led_sig_high_ctrl(false);
+    return ESP_OK;
+}
+
+esp_err_t led_rec_ctrl(bool state){
+    gpio_set_level(LED_REC_GPIO, state);
+    return ESP_OK;
+};
+
+esp_err_t led_ptt_ctrl(bool state){
+    gpio_set_level(LED_PTT_GPIO, state);
+    return ESP_OK;
+};
+esp_err_t led_sig_low_ctrl(bool state){
+    gpio_set_level(LED_LOW_SIGNAL_GPIO, state);
+    return ESP_OK;
+};
+esp_err_t led_sig_mid_ctrl(bool state){
+    gpio_set_level(LED_MEDIUM_SIGNAL_GPIO, state);
+    return ESP_OK;
+};
+esp_err_t led_sig_high_ctrl(bool state){
+    gpio_set_level(LED_HIGH_SIGNAL_GPIO, state);
+    return ESP_OK;
+};

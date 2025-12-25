@@ -6,7 +6,7 @@ file(GLOB_RECURSE COMPONENT_SOURCE_FILES
                     "${SOURCE_DIR}/*.c")
 
 set(PRIV_REQUIRED_COMPONENTS)
-list(APPEND PRIV_REQUIRED_COMPONENTS "esp_driver_dac")
+list(APPEND PRIV_REQUIRED_COMPONENTS esp_driver_dac)
 
 set(INCLUDE_DIR "./include")
 idf_component_register( SRCS ${COMPONENT_SOURCE_FILES}

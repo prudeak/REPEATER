@@ -1,10 +1,16 @@
 #include "recorder.h"
 
 #include "esp_adc/adc_continuous.h"
+//#include "driver/gpio.h"
 
 #define TAG "RECORDER"
 #define AUDIO_SAMPLE_RATE 22050
 #define ADC_BUF_READ_LEN 2048
+
+static esp_err_t (*led_control_rec_led_callback_ptr)(bool state) = nullptr;
+static esp_err_t (*led_control_sig_low_led_callback_ptr)(bool state) = nullptr;
+static esp_err_t (*led_control_sig_mid_led_callback_ptr)(bool state) = nullptr;
+static esp_err_t (*led_control_sig_high_led_callback_ptr)(bool state) = nullptr;
 
 static esp_err_t(*serial_output_callback_ptr)(const char * const str, const size_t size) = nullptr;
 
@@ -12,11 +18,61 @@ esp_err_t recorder_serial_output_callback_register(esp_err_t(*callback_ptr)(cons
     serial_output_callback_ptr = callback_ptr;
     return ESP_OK;
 }
+
+esp_err_t recorder_led_control_rec_led_callback_register(esp_err_t(*callback_ptr)(bool state)){
+    led_control_rec_led_callback_ptr = callback_ptr;
+    return ESP_OK;
+};
+esp_err_t recorder_led_control_sig_low_led_callback_register(esp_err_t(*callback_ptr)(bool state)){
+    led_control_sig_low_led_callback_ptr = callback_ptr;
+    return ESP_OK;
+};
+esp_err_t recorder_led_control_sig_mid_led_callback_register(esp_err_t(*callback_ptr)(bool state)){
+    led_control_sig_mid_led_callback_ptr = callback_ptr;
+    return ESP_OK;
+};
+esp_err_t recorder_led_control_sig_high_led_callback_register(esp_err_t(*callback_ptr)(bool state)){
+    led_control_sig_high_led_callback_ptr = callback_ptr;
+    return ESP_OK;
+};
+
+esp_err_t led_rec_set(bool state){
+    if (led_control_rec_led_callback_ptr != nullptr){
+        return (*led_control_rec_led_callback_ptr)(state);
+    }else{
+        return ESP_FAIL;
+    }  
+}
+
+esp_err_t led_sig_low_set(bool state){
+    if (led_control_sig_low_led_callback_ptr != nullptr){
+        return (*led_control_sig_low_led_callback_ptr)(state);
+    }else{
+        return ESP_FAIL;
+    }  
+}
+
+esp_err_t led_sig_mid_set(bool state){
+    if (led_control_sig_mid_led_callback_ptr != nullptr){
+        return (*led_control_sig_mid_led_callback_ptr)(state);
+    }else{
+        return ESP_FAIL;
+    }  
+}
+
+esp_err_t led_sig_high_set(bool state){
+    if (led_control_sig_high_led_callback_ptr != nullptr){
+        return (*led_control_sig_high_led_callback_ptr)(state);
+    }else{
+        return ESP_FAIL;
+    }  
+}
+
 esp_err_t serial_out_write(const char * const data, const size_t size){
     if (serial_output_callback_ptr != nullptr){
         return (*serial_output_callback_ptr)(data, size);
     }else{
-        return ESP_ERR_NOT_ALLOWED;
+        return ESP_FAIL;
     }
 }
 esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t * const record_size){
@@ -55,9 +111,9 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
     
     const uint8_t BIT_SHIFT = 3; //to convert 12bit unsigned int to 16bit signed int
     uint16_t BIAS = 14690; // Measured value of ADC BIAS
-    uint16_t TRESHOLD = 3000; // Measured value
+    uint16_t TRESHOLD = 300; // Measured value
     const uint8_t SAMPLE_SIZE = 2; // final sample size in audio buffer, bytes
-    const uint32_t MIN_OVERTRESHOLD_SAMPLES_COUNT = 150; // Минимальное количество семплов выше TRESHOLD за выборку для начала записи
+    const uint32_t MIN_OVERTRESHOLD_SAMPLES_COUNT = 50; // Минимальное количество семплов выше TRESHOLD за выборку для начала записи
     size_t sample_counter = 0;
     uint16_t silent_readouts_count = 0;
     bool record_enabled = false;
@@ -104,8 +160,10 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
                 else silent_readouts_count = 0;
                 if (silent_readouts_count > 50) {
                     ret = ESP_OK;
+                    led_rec_set(false);
                     break; // насчитали 30 пустых ридоутов - заканчиваем запись
                 }
+                led_rec_set(true);
             }else{
                 {   // LOGGING
                     ESP_LOGV(TAG, "WAIT %4d: %+7d, %+7d, %5d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count);
@@ -123,7 +181,8 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
                     record_enabled = true; // Включаем запись
                     ESP_LOGI(TAG, "RECORD_STARTED");    
                 }
-                else sample_counter = 0; // Перезаписываем буфер сначала 
+                else sample_counter = 0; // Перезаписываем буфер сначала
+                led_rec_set(false); 
             }
 
             //ESP_LOGI(TAG, "%d: %d, %d, %d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count);
