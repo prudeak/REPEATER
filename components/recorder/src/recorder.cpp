@@ -109,9 +109,9 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
     uint8_t adc_readout[ADC_BUF_READ_LEN] = {0};
     esp_err_t ret = ESP_OK;
     
-    const uint8_t BIT_SHIFT = 3; //to convert 12bit unsigned int to 16bit signed int
-    uint16_t BIAS = 14690; // Measured value of ADC BIAS
-    uint16_t TRESHOLD = 300; // Measured value
+    const uint8_t BIT_SHIFT = 4; //to convert 12bit unsigned int to 16bit signed int
+    uint16_t BIAS = 29380;//14690; // Measured value of ADC BIAS
+    uint16_t TRESHOLD = 600; // Measured value
     const uint8_t SAMPLE_SIZE = 2; // final sample size in audio buffer, bytes
     const uint32_t MIN_OVERTRESHOLD_SAMPLES_COUNT = 50; // Минимальное количество семплов выше TRESHOLD за выборку для начала записи
     size_t sample_counter = 0;
