@@ -10,9 +10,17 @@
 #define LED_MEDIUM_SIGNAL_GPIO   GPIO_NUM_12
 #define LED_HIGH_SIGNAL_GPIO     GPIO_NUM_13
 
-#define LED_REC_GPIO             GPIO_NUM_27   // GREEN LED
+#define LED_REC_GPIO             GPIO_NUM_27     // !!! Заменить на GPIO_NUM_15, перепаять!!! //!!!!! GREEN LED
 //#define LED_PLAY_GPIO            GPIO_NUM_15   
-#define LED_PTT_GPIO             GPIO_NUM_32   // RED LED
+#define LED_PTT_GPIO             GPIO_NUM_32    // RED LED
+
+#define SD_MOSI_GPIO            GPIO_NUM_23     //  Как в ХВАРДе
+#define SD_MISO_GPIO            GPIO_NUM_19     //  Как в ХВАРДе
+#define SD_CS_GPIO              GPIO_NUM_27     //  Как в ХВАРДе
+#define SD_SCK_GPIO             GPIO_NUM_18     //  Как в ХВАРДе
+
+#define I2C_SCL_GPIO            GPIO_NUM_22     //  Как в ХВАРДе
+#define I2C_SDA_GPIO            GPIO_NUM_21     //  Как в ХВАРДе
 
 esp_err_t led_init_pins();
 
