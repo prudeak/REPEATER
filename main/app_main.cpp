@@ -39,16 +39,17 @@ void app_main(void)
     else ESP_LOGE(TAG, "audio buffer allocation failed");
 
     bluetooth_serial_init();
-    led_init_pins();
+    haos_hal_led_init_pins();
 
     recorder_serial_output_callback_register(&bluetooth_serial_write);
-    recorder_led_control_rec_led_callback_register(&led_rec_ctrl);
-    recorder_led_control_sig_low_led_callback_register(&led_sig_low_ctrl);
-    recorder_led_control_sig_mid_led_callback_register(&led_sig_mid_ctrl);
-    recorder_led_control_sig_high_led_callback_register(&led_sig_high_ctrl);
+    
+    recorder_led_control_rec_led_callback_register(&haos_hal_led_rec_ctrl);
+    recorder_led_control_sig_low_led_callback_register(&haos_hal_led_sig_low_ctrl);
+    recorder_led_control_rec_err_led_callback_register(&haos_hal_led_rec_err_ctrl);
+    recorder_led_control_sig_high_led_callback_register(&haos_hal_led_sig_high_ctrl);
 
     i2s_player_serial_output_callback_register(&bluetooth_serial_write);
-    i2s_player_led_control_play_led_callback_register(&led_ptt_ctrl);
+    i2s_player_led_control_play_led_callback_register(&haos_hal_led_ptt_ctrl);
 
     i2s_play_tone(1000, 180);
     i2s_play_tone(1200, 180);
@@ -61,10 +62,16 @@ void app_main(void)
         esp_err_t ret = record_raw(audio_buffer_ptr, audio_buffer_size, &recorded_audio_size);
         if (recorded_audio_size / (AUDIO_BYTES_PER_SAMPLE * AUDIO_SAMPLE_RATE) < 3) {
             ESP_LOGI(TAG, "RECORD is too short, DROPPED");
+            haos_hal_led_rec_err_ctrl(true);
+            vTaskDelay(pdMS_TO_TICKS(500));
+            haos_hal_led_rec_err_ctrl(false);
             continue;
         }
         if (ret == ESP_ERR_NOT_FINISHED){
             ESP_LOGI(TAG, "RECORD is too long, NOT_FINISHED. DROPPED");
+            haos_hal_led_rec_err_ctrl(true);
+            vTaskDelay(pdMS_TO_TICKS(500));
+            haos_hal_led_rec_err_ctrl(false);
             continue;
         }
         

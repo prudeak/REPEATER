@@ -1,15 +1,17 @@
 #include "recorder.h"
 
 #include "esp_adc/adc_continuous.h"
-//#include "driver/gpio.h"
 
 #define TAG "RECORDER"
-#define AUDIO_SAMPLE_RATE 22050
+#define AUDIO_SAMPLE_RATE 26900 //27000 //22050*1.22 потому что частота дискретизации АЦП считается неправильно
 #define ADC_BUF_READ_LEN 2048
-
+/* ЗЕЛЕНЫЙ светодиод "ЗАПИСЬ"*/
 static esp_err_t (*led_control_rec_led_callback_ptr)(bool state) = nullptr;
+/* БЕЛЫЙ светодиод "МИНИМАЛЬНЫЙ УРОВЕНЬ СИГНАЛА"*/
 static esp_err_t (*led_control_sig_low_led_callback_ptr)(bool state) = nullptr;
-static esp_err_t (*led_control_sig_mid_led_callback_ptr)(bool state) = nullptr;
+/* КРАСНЫЙ светодиод №2 "ОШИБКА ЗАПИСИ" - горит, когда уплыл ноль*/
+static esp_err_t (*led_control_rec_err_led_callback_ptr)(bool state) = nullptr;
+/* КРАСНЫЙ светодиод №1 "МАКСИМАЛЬНЫЙ УРОВЕНЬ СИГНАЛА - ПЕРЕГРУЗ" */
 static esp_err_t (*led_control_sig_high_led_callback_ptr)(bool state) = nullptr;
 
 static esp_err_t(*serial_output_callback_ptr)(const char * const str, const size_t size) = nullptr;
@@ -27,8 +29,8 @@ esp_err_t recorder_led_control_sig_low_led_callback_register(esp_err_t(*callback
     led_control_sig_low_led_callback_ptr = callback_ptr;
     return ESP_OK;
 };
-esp_err_t recorder_led_control_sig_mid_led_callback_register(esp_err_t(*callback_ptr)(bool state)){
-    led_control_sig_mid_led_callback_ptr = callback_ptr;
+esp_err_t recorder_led_control_rec_err_led_callback_register(esp_err_t(*callback_ptr)(bool state)){
+    led_control_rec_err_led_callback_ptr = callback_ptr;
     return ESP_OK;
 };
 esp_err_t recorder_led_control_sig_high_led_callback_register(esp_err_t(*callback_ptr)(bool state)){
@@ -52,9 +54,9 @@ esp_err_t led_sig_low_set(bool state){
     }  
 }
 
-esp_err_t led_sig_mid_set(bool state){
-    if (led_control_sig_mid_led_callback_ptr != nullptr){
-        return (*led_control_sig_mid_led_callback_ptr)(state);
+esp_err_t led_rec_err_set(bool state){
+    if (led_control_rec_err_led_callback_ptr != nullptr){
+        return (*led_control_rec_err_led_callback_ptr)(state);
     }else{
         return ESP_FAIL;
     }  
@@ -109,25 +111,39 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
     uint8_t adc_readout[ADC_BUF_READ_LEN] = {0};
     esp_err_t ret = ESP_OK;
     
-    const uint8_t BIT_SHIFT = 4; //to convert 12bit unsigned int to 16bit signed int
-    uint16_t BIAS = 29380;//14690; // Measured value of ADC BIAS
-    uint16_t TRESHOLD = 600; // Measured value
+    const uint8_t BIT_SHIFT = 3; //to convert 12bit unsigned int to 16bit signed int
+    //uint16_t BIAS = 29380; // Measured value of ADC BIAS
+    const uint16_t TRESHOLD = 600; // Measured value
     const uint8_t SAMPLE_SIZE = 2; // final sample size in audio buffer, bytes
     const uint32_t MIN_OVERTRESHOLD_SAMPLES_COUNT = 50; // Минимальное количество семплов выше TRESHOLD за выборку для начала записи
     size_t sample_counter = 0;
     uint16_t silent_readouts_count = 0;
     bool record_enabled = false;
+    // Измеряем ноль перед циклом прослушивания / записи
+    ESP_LOGI(TAG, "Measuring ADC zero point...");
+    uint16_t adc_zero = 2048;
+    {
+        uint32_t adc_accu = 0;
+        ret = adc_continuous_read(adc_handle, adc_readout, ADC_BUF_READ_LEN, &ret_num, 100);
+        for (uint16_t i=0; i < ret_num; i+= SOC_ADC_DIGI_RESULT_BYTES){
+            adc_digi_output_data_t *p = (adc_digi_output_data_t*)&adc_readout[i];
+            adc_accu += p->type1.data;   
+        }
+        adc_zero = adc_accu / (ret_num / SOC_ADC_DIGI_RESULT_BYTES);
+    }
     while(1){
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(10));
         ret = adc_continuous_read(adc_handle, adc_readout, ADC_BUF_READ_LEN, &ret_num, 100);
         if (ret == ESP_OK) {
+            uint32_t adc_accu = 0;
             int16_t max_sample_val = 0;
             int16_t min_sample_val = 0;
             int32_t overtreshold_samples_count = 0;
-            for (uint16_t i=0; i < ret_num; i+= SOC_ADC_DIGI_RESULT_BYTES/*sizeof(adc_digi_output_data_t)*/){
+            for (uint16_t i=0; i < ret_num; i+= SOC_ADC_DIGI_RESULT_BYTES){
                 adc_digi_output_data_t *p = (adc_digi_output_data_t*)&adc_readout[i];
-                int16_t sample_val = (((int16_t)(p->type1.data<<BIT_SHIFT))-BIAS);
-                
+                adc_accu += p->type1.data;
+                //int16_t sample_val = (((int16_t)(p->type1.data<<BIT_SHIFT))-BIAS);
+                const int16_t sample_val = ((p->type1.data)<<3) - (adc_zero<<3);
                 if (i==0){
                     max_sample_val = sample_val;
                     min_sample_val = sample_val;    
@@ -139,13 +155,19 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
                 sample_counter++;
                 if ((sample_counter * SAMPLE_SIZE)>=buffer_size) break;
             }
+            adc_zero = adc_accu / (ret_num / SOC_ADC_DIGI_RESULT_BYTES);
+
             if ((sample_counter * SAMPLE_SIZE)>=buffer_size) {
+                led_rec_err_set(false);
+                led_rec_set(false);
+                led_sig_low_set(false);
+                led_sig_high_set(false);
                 ret = ESP_ERR_NOT_FINISHED;
                 break; // Буфер заполнен - выходим из цикла записи
             }
-            if (record_enabled){
+            if (record_enabled){ // Если запись ИДЕТ (RECORD_ENABLED == TRUE)
                 { // LOOGGING
-                    ESP_LOGV(TAG, "REC %4d: %+7d, %+7d, %5d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count);
+                    ESP_LOGV(TAG, "REC %4d: %+7d, %+7d, %5d BIAS:%5d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count, adc_zero);
                     int len = snprintf(text_output_buffer,
                                     sizeof(text_output_buffer), 
                                     "REC: %4ld: %+7d, %+7d, %5ld\n",
@@ -161,12 +183,15 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
                 if (silent_readouts_count > 50) {
                     ret = ESP_OK;
                     led_rec_set(false);
+                    led_rec_err_set(false);
+                    led_sig_low_set(false);
+                    led_sig_high_set(false);
                     break; // насчитали 30 пустых ридоутов - заканчиваем запись
                 }
                 led_rec_set(true);
-            }else{
+            }else{ // Если запись НЕ ИДЕТ (RECORD_ENABLED == FALSE)
                 {   // LOGGING
-                    ESP_LOGV(TAG, "WAIT %4d: %+7d, %+7d, %5d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count);
+                    ESP_LOGV(TAG, "WAIT %4d: %+7d, %+7d, %5d, BIAS:%5d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count, adc_zero);
                     int len = snprintf(text_output_buffer,
                                     sizeof(text_output_buffer), 
                                     "WAIT: %4ld: %+7d, %+7d, %5ld\n",
@@ -184,9 +209,15 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
                 else sample_counter = 0; // Перезаписываем буфер сначала
                 led_rec_set(false); 
             }
+            led_sig_low_set(overtreshold_samples_count > 3);
+            led_sig_high_set((max_sample_val > 14000)&&(min_sample_val < -14000));
+            led_rec_err_set(false);
 
             //ESP_LOGI(TAG, "%d: %d, %d, %d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count);
         }else if (ret == ESP_ERR_TIMEOUT) {
+            led_sig_low_set(false);
+            led_sig_high_set(false);
+            led_rec_err_set(true);
             ESP_LOGW(TAG, "NO_DATA_FROM ADC");
         }
     }
@@ -196,3 +227,4 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
     *record_size = sample_counter * SAMPLE_SIZE;
     return ret;
 };
+

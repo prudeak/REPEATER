@@ -47,7 +47,8 @@ esp_err_t i2s_play_tone(uint16_t freq, uint16_t time_ms){
     const double PI = 3.141592653589793;
     for(uint16_t i = 0; i < samples_per_period; i++){
         double phase = i * 2 * PI / samples_per_period;
-        int16_t val = 0x3fff * std::cos(phase);
+        //int16_t val = 0x3fff * std::cos(phase);
+        int16_t val = 0x5fff * std::cos(phase);
         audio_buf[i] = val;
     }
     i2s_chan_handle_t tx_chan_handle = i2s_dac_init();
