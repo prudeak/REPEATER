@@ -8,7 +8,6 @@
 
 #include "hardware_leds.h"
 #include "recorder.h"
-#include "player.h"
 #include "i2s_player.h"
 #include "bluetooth_serial.h"
 
