@@ -16,6 +16,14 @@ static esp_err_t (*led_control_sig_high_led_callback_ptr)(bool state) = nullptr;
 
 static esp_err_t(*serial_output_callback_ptr)(const char * const str, const size_t size) = nullptr;
 
+esp_err_t readout_logger(   const char *const mode,
+                            const uint32_t samples_num, 
+                            const int16_t max_sample_val,
+                            const int16_t min_sample_val,
+                            const uint32_t overtreshold_samples_count,
+                            const int16_t adc_zero
+                        );
+
 esp_err_t recorder_serial_output_callback_register(esp_err_t(*callback_ptr)(const char * const data, const size_t size)){
     serial_output_callback_ptr = callback_ptr;
     return ESP_OK;
@@ -77,10 +85,32 @@ esp_err_t serial_out_write(const char * const data, const size_t size){
         return ESP_FAIL;
     }
 }
+
+esp_err_t serial_print(const char *const message){
+    if(serial_output_callback_ptr != nullptr){
+        return (*serial_output_callback_ptr)(message, strlen(message));
+    }else{
+        return ESP_FAIL;
+    }
+}
+
+esp_err_t serial_println(const char *const message){
+    if (serial_output_callback_ptr != nullptr){
+        esp_err_t ret = (*serial_output_callback_ptr)(message, strlen(message));
+        if (ret == ESP_OK) ret = (*serial_output_callback_ptr)("\n", 1);
+        return ret;
+    }else{
+        return ESP_FAIL;
+    }
+}
+
 esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t * const record_size){
     char text_output_buffer [255] = {0};
     ESP_LOGI(TAG, "INIT ADC");
+    serial_println("INIT ADC");
     esp_log_level_set(TAG, ESP_LOG_VERBOSE);
+    esp_log_level_set("REC", ESP_LOG_VERBOSE);
+    esp_log_level_set("WAIT", ESP_LOG_VERBOSE);
     adc_continuous_handle_t adc_handle = NULL;
     adc_continuous_handle_cfg_t adc_config = {
         .max_store_buf_size = 2048,
@@ -107,6 +137,7 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
 
     ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
     ESP_LOGI(TAG, "WAITING");
+    serial_println("WAITING");
     uint32_t ret_num = 0;
     uint8_t adc_readout[ADC_BUF_READ_LEN] = {0};
     esp_err_t ret = ESP_OK;
@@ -121,6 +152,7 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
     bool record_enabled = false;
     // Измеряем ноль перед циклом прослушивания / записи
     ESP_LOGI(TAG, "Measuring ADC zero point...");
+    serial_println("Measuring ADC zero point...");
     uint16_t adc_zero = 2048;
     {
         uint32_t adc_accu = 0;
@@ -131,8 +163,12 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
         }
         adc_zero = adc_accu / (ret_num / SOC_ADC_DIGI_RESULT_BYTES);
     }
+    ESP_LOGI(TAG, "ADC Zero is %d (%.2f V)", adc_zero, ((float)adc_zero * 3.3 / 4096));
+    sprintf(text_output_buffer, "ADC Zero is %d (%.2f V)", adc_zero, ((float)adc_zero * 3.3 / 4096));
+    serial_println(text_output_buffer);
+
     while(1){
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(30));
         ret = adc_continuous_read(adc_handle, adc_readout, ADC_BUF_READ_LEN, &ret_num, 100);
         if (ret == ESP_OK) {
             uint32_t adc_accu = 0;
@@ -166,18 +202,8 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
                 break; // Буфер заполнен - выходим из цикла записи
             }
             if (record_enabled){ // Если запись ИДЕТ (RECORD_ENABLED == TRUE)
-                { // LOOGGING
-                    ESP_LOGV(TAG, "REC %4d: %+7d, %+7d, %5d BIAS:%5d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count, adc_zero);
-                    int len = snprintf(text_output_buffer,
-                                    sizeof(text_output_buffer), 
-                                    "REC: %4ld: %+7d, %+7d, %5ld\n",
-                                    ret_num, 
-                                    max_sample_val, 
-                                    min_sample_val, 
-                                    overtreshold_samples_count
-                                    );
-                    serial_out_write(text_output_buffer, len);
-                }
+                readout_logger("REC", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count, adc_zero);
+
                 if (overtreshold_samples_count < MIN_OVERTRESHOLD_SAMPLES_COUNT) silent_readouts_count ++;
                 else silent_readouts_count = 0;
                 if (silent_readouts_count > 50) {
@@ -190,21 +216,11 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
                 }
                 led_rec_set(true);
             }else{ // Если запись НЕ ИДЕТ (RECORD_ENABLED == FALSE)
-                {   // LOGGING
-                    ESP_LOGV(TAG, "WAIT %4d: %+7d, %+7d, %5d, BIAS:%5d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count, adc_zero);
-                    int len = snprintf(text_output_buffer,
-                                    sizeof(text_output_buffer), 
-                                    "WAIT: %4ld: %+7d, %+7d, %5ld\n",
-                                    ret_num, 
-                                    max_sample_val, 
-                                    min_sample_val, 
-                                    overtreshold_samples_count
-                                    );
-                    serial_out_write(text_output_buffer, len);
-                }
+                readout_logger("WAIT", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count, adc_zero);
                 if (overtreshold_samples_count > MIN_OVERTRESHOLD_SAMPLES_COUNT) {
                     record_enabled = true; // Включаем запись
-                    ESP_LOGI(TAG, "RECORD_STARTED");    
+                    ESP_LOGI(TAG, "RECORD_STARTED");
+                    serial_println("RECORD STARTED");    
                 }
                 else sample_counter = 0; // Перезаписываем буфер сначала
                 led_rec_set(false); 
@@ -219,12 +235,46 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
             led_sig_high_set(false);
             led_rec_err_set(true);
             ESP_LOGW(TAG, "NO_DATA_FROM ADC");
+            serial_println("NO DATA FROM ADC");
         }
     }
     ESP_LOGI(TAG, "RECORD DONE, recorded %d samples", sample_counter);
+    sprintf(text_output_buffer, "RECORD DONE, recorded %d samples", sample_counter);
+    serial_println(text_output_buffer);
     ESP_ERROR_CHECK(adc_continuous_stop(adc_handle));
     ESP_ERROR_CHECK(adc_continuous_deinit(adc_handle));
     *record_size = sample_counter * SAMPLE_SIZE;
     return ret;
 };
+
+esp_err_t readout_logger(   const char *const mode,
+                            const uint32_t samples_num, 
+                            const int16_t max_sample_val,
+                            const int16_t min_sample_val,
+                            const uint32_t overtreshold_samples_count,
+                            const int16_t adc_zero
+                        ){
+    char text_output_buffer [255] = {0};
+    snprintf(   text_output_buffer,
+                sizeof(text_output_buffer), 
+                "%s %4ld: %+7d, %+7d, %5ld, BIAS:%5d(%.2fV)",
+                mode,
+                samples_num, 
+                max_sample_val, 
+                min_sample_val, 
+                overtreshold_samples_count,
+                adc_zero,
+                ((float)adc_zero * 3.3 / 4096)
+                );
+    serial_println(text_output_buffer);
+    ESP_LOGV(mode, "%4d: %+7d, %+7d, %5d, BIAS:%5d (%.2fV)",
+                samples_num, 
+                max_sample_val, 
+                min_sample_val, 
+                overtreshold_samples_count, 
+                adc_zero,
+                ((float)adc_zero * 3.3 / 4096));
+    return ESP_OK;
+
+}
 
