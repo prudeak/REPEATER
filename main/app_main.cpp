@@ -10,6 +10,7 @@
 #include "recorder.h"
 #include "i2s_player.h"
 #include "bluetooth_serial.h"
+#include "haos_session.h"
 
 #define AUDIO_SAMPLE_RATE 22050
 #define AUDIO_MESSAGE_LENGTH_SEC 15
@@ -40,6 +41,10 @@ void app_main(void)
     bluetooth_serial_init();
     haos_hal_led_init_pins();
 
+    haos_session_output_callback_register(&bluetooth_serial_write, nullptr);
+    const char * session_test = "\nSESSOIN_TEST\n\n";
+    haos_session_write(session_test, strlen(session_test));
+
     recorder_serial_output_callback_register(&bluetooth_serial_write);
     
     recorder_led_control_rec_led_callback_register(&haos_hal_led_rec_ctrl);
@@ -55,7 +60,7 @@ void app_main(void)
     i2s_play_tone(1400, 180);
     i2s_play_tone(1000, 220);
 
-    
+    /*
     while(1){
         size_t recorded_audio_size = 0;
         esp_err_t ret = record_raw(audio_buffer_ptr, audio_buffer_size, &recorded_audio_size);
@@ -78,5 +83,6 @@ void app_main(void)
         
         vTaskDelay(pdMS_TO_TICKS(100));
     }
+        */
 }
 
