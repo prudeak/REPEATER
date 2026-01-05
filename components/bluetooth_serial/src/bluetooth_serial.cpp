@@ -52,6 +52,13 @@ static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param){
             ESP_LOGI(TAG, "SPP server connection closed");
             spp_handle = 0;
             break;
+        case ESP_SPP_DATA_IND_EVT:
+            {
+                ESP_LOGI(TAG, "BT INCOMING %d bytes of DATA:", param->data_ind.len);
+                const char * str = "\nBT INCOMING DATA EVENT\n\n";
+                esp_spp_write(spp_handle, strlen(str), (uint8_t*)str);
+            }
+            break;
         default:
             break;
     } 
