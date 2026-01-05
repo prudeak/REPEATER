@@ -143,7 +143,6 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
     esp_err_t ret = ESP_OK;
     
     const uint8_t BIT_SHIFT = 3; //to convert 12bit unsigned int to 16bit signed int
-    //uint16_t BIAS = 29380; // Measured value of ADC BIAS
     const uint16_t TRESHOLD = 600; // Measured value
     const uint8_t SAMPLE_SIZE = 2; // final sample size in audio buffer, bytes
     const uint32_t MIN_OVERTRESHOLD_SAMPLES_COUNT = 50; // Минимальное количество семплов выше TRESHOLD за выборку для начала записи
@@ -178,7 +177,6 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
             for (uint16_t i=0; i < ret_num; i+= SOC_ADC_DIGI_RESULT_BYTES){
                 adc_digi_output_data_t *p = (adc_digi_output_data_t*)&adc_readout[i];
                 adc_accu += p->type1.data;
-                //int16_t sample_val = (((int16_t)(p->type1.data<<BIT_SHIFT))-BIAS);
                 const int16_t sample_val = ((p->type1.data)<<3) - (adc_zero<<3);
                 if (i==0){
                     max_sample_val = sample_val;
@@ -229,7 +227,6 @@ esp_err_t record_raw(void * const output_data, const size_t buffer_size, size_t 
             led_sig_high_set((max_sample_val > 14000)&&(min_sample_val < -14000));
             led_rec_err_set(false);
 
-            //ESP_LOGI(TAG, "%d: %d, %d, %d", ret_num, max_sample_val, min_sample_val, overtreshold_samples_count);
         }else if (ret == ESP_ERR_TIMEOUT) {
             led_sig_low_set(false);
             led_sig_high_set(false);
