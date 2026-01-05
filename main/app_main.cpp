@@ -60,7 +60,7 @@ void app_main(void)
     i2s_play_tone(1400, 180);
     i2s_play_tone(1000, 220);
 
-    /*
+    
     while(1){
         size_t recorded_audio_size = 0;
         esp_err_t ret = record_raw(audio_buffer_ptr, audio_buffer_size, &recorded_audio_size);
@@ -83,6 +83,6 @@ void app_main(void)
         
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-        */
+        
 }
 
